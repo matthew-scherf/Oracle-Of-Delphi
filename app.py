@@ -52,6 +52,10 @@ def oracle_ask(q: str):
         return f"API error: {e}", "[]", "[]", "[]"
 
     draft = repair(draft)
+
+    if not draft.get("claims"):
+        draft = call_model(q, extra_system="Add at least one informative relation and cite relevant axioms (e.g., D1, T4). Return json only.")
+
     violations = validate(draft)
 
     if violations:

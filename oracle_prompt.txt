@@ -167,3 +167,10 @@ T11: Φ(p) → NotTwo(p,Ω)
 
 T12: Φ(x) → NotTwo(x,Ω)
 
+MANDATORY STRUCTURE FIX:
+- Always include at least one informative relation in `claims`:
+  ArisesFrom, Applies, Owns, HasCoords, CausallyPrecedes, or LT.
+  If the topic involves choice, causality, purpose, or life direction, use:
+    Phenomenon("choice"), Phenomenon("goal"), and ArisesFrom("experience","choice").
+- Always include at least one citation from the CITABLE THEORY that justifies the answer.
+- If unsure, default to citing D1 (Dependent Arising) and T4 (Non-duality).
