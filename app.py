@@ -76,7 +76,7 @@ def oracle_ask(q: str):
 
     answer = draft.get("answer","").strip()
     claims = json.dumps(draft.get("claims",[]), indent=2)
-    citations = json.dumps(draft.get("citations",[]), indent=2)
+    citations = json.dumps(draft.get("citations", []), indent=2, ensure_ascii=False)
     return answer, claims, "[]", citations
 
 with gr.Blocks(title="Oracle of Delphi (Ω) — Cited") as demo:
