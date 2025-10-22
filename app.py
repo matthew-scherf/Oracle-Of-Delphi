@@ -35,6 +35,8 @@ def call_model(q: str):
 
 from validator import validate, repair
 
+from validator import validate, repair
+
 def oracle_ask(q: str):
     if not q.strip():
         return "Ask something.", "[]", "[]"
@@ -44,7 +46,7 @@ def oracle_ask(q: str):
     except Exception as e:
         return f"API error: {e}", "[]", "[]"
 
-    # Auto-complete and validate the structured claims
+    # Normalize/auto-complete before validating
     draft = repair(draft)
     violations = validate(draft)
 
@@ -55,20 +57,17 @@ def oracle_ask(q: str):
             json.dumps(violations, indent=2),
         )
 
-    # Combine both layers of the Oracle's voice
-    ultimate = draft.get("answer_ultimate", "")
+    # Merge layers for display
+    ultimate = draft.get("answer_ultimate", "") or draft.get("answer", "")
     conventional = draft.get("answer_conventional", "")
     guidance = draft.get("guidance_steps", [])
 
-    combined_answer = ultimate
+    combined = ultimate
     if conventional:
-        combined_answer += "\n\n" + conventional
+        combined += ("\n\n" + conventional)
 
-    return (
-        combined_answer.strip(),
-        json.dumps(draft.get("claims", []), indent=2),
-        json.dumps(guidance, indent=2),
-    )
+    return combined.strip(), json.dumps(draft.get("claims", []), indent=2), json.dumps(guidance, indent=2)
+
 
 
 with gr.Blocks(title="Oracle of Delphi (Ω)") as demo:

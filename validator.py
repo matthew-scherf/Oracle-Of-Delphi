@@ -1,67 +1,205 @@
+# validator.py — robust normalizer + validator
+
 Ω = 'Ω'
 
-def repair(d):
-    """Auto-complete safe claims before validation."""
+def _as_str(x):
+    return x if isinstance(x, str) else str(x)
+
+def _normalize_claims(claims):
+    """
+    Make sure claims is a list[dict{predicate:str, args:list[str]}].
+    - If a claim is a string (e.g., '{"predicate":...}'), try json.loads it.
+    - Coerce non-list args to a 1-item list.
+    - Coerce every arg to string.
+    - Drop items we cannot repair; record soft errors for validate() to show.
+    """
+    import json
+    out = []
+    soft_errors = []
+
+    if not isinstance(claims, list):
+        soft_errors.append("claims must be a list")
+        return [], soft_errors
+
+    for i, c in enumerate(claims):
+        original = c
+        # If claim is a JSON string, try to parse it
+        if isinstance(c, str):
+            try:
+                c = json.loads(c)
+            except Exception:
+                soft_errors.append(f"claim[{i}] is a string that is not valid JSON; skipping")
+                continue
+        if not isinstance(c, dict):
+            soft_errors.append(f"claim[{i}] is not an object; skipping")
+            continue
+        p = c.get("predicate")
+        a = c.get("args")
+        if not isinstance(p, str):
+            soft_errors.append(f"claim[{i}] missing/invalid 'predicate'; skipping")
+            continue
+        if not isinstance(a, list):
+            a = [a] if a is not None else []
+        a = [_as_str(x) for x in a]
+        out.append({"predicate": p, "args": a})
+    return out, soft_errors
+
+
+def repair(payload):
+    """
+    Auto-complete safe claims before validation:
+    - Ensure Phenomenon(x) implies Inseparable(x, Ω)
+    - Ensure Owns(a,p) implies ValidConv(p)
+    """
+    import copy
+    d = payload if isinstance(payload, dict) else {}
+    d = copy.deepcopy(d)
+
     claims = d.get("claims", [])
-    phenos = {c["args"][0] for c in claims if c["predicate"] == "Phenomenon"}
-    inseps = {(c["args"][0], c["args"][1]) for c in claims if c["predicate"] in ("Inseparable", "NotTwo")}
+    claims, _ = _normalize_claims(claims)
+
+    # Collect helpers
+    phenos = {c["args"][0] for c in claims if c["predicate"] == "Phenomenon" and len(c["args"]) >= 1}
+    inseps = {(c["args"][0], c["args"][1]) for c in claims if c["predicate"] in ("Inseparable", "NotTwo") and len(c["args"]) >= 2}
+
+    # Add missing inseparability
     for x in phenos:
         if (x, Ω) not in inseps:
             claims.append({"predicate": "Inseparable", "args": [x, "Ω"]})
-    for c in list(claims):
-        if c["predicate"] == "Owns":
-            _, p = c["args"]
-            if not any(cc["predicate"] == "ValidConv" and cc["args"][0] == p for cc in claims):
-                claims.append({"predicate": "ValidConv", "args": [p]})
+
+    # Ensure ValidConv for owned phenomena
+    owned = [(c["args"][0], c["args"][1]) for c in claims if c["predicate"] == "Owns" and len(c["args"]) >= 2]
+    valid = {c["args"][0] for c in claims if c["predicate"] == "ValidConv" and len(c["args"]) >= 1}
+    for (_, p) in owned:
+        if p not in valid:
+            claims.append({"predicate": "ValidConv", "args": [p]})
+
     d["claims"] = claims
     return d
 
 
-def richness_check(claims):
+def _richness_check(claims):
     informative = [c for c in claims if c["predicate"] in (
         "CausallyPrecedes", "HasCoords", "Applies", "Owns", "ArisesFrom", "LT")]
     return len(informative) >= 1
 
 
 def validate(payload):
-    payload = repair(payload)
-    claims = payload.get('claims', [])
-    P, S, I, E, H, C, O, V, A = set(), set(), set(), set(), set(), set(), set(), set(), set()
+    """
+    Returns list[str] errors (empty list => valid).
+    """
+    import copy
     errors = []
 
-    for c in claims:
-        p = c['predicate']
-        a = c['args']
-        if p == 'Phenomenon': P.add(a[0])
-        elif p == 'Substrate': S.add(a[0])
-        elif p in ('Inseparable', 'NotTwo'): I.add(tuple(a))
-        elif p == 'Essence': E.add(a[0])
-        elif p == 'HasCoords': H.add(tuple(a))
-        elif p == 'CausallyPrecedes': C.add(tuple(a))
-        elif p == 'Owns': O.add(tuple(a))
-        elif p == 'ValidConv': V.add(a[0])
-        elif p == 'Applies': A.add(tuple(a))
-        else: errors.append(f'Unknown predicate {p}')
+    if not isinstance(payload, dict):
+        return ["payload must be a JSON object"]
 
+    # Normalize
+    payload = copy.deepcopy(payload)
+    claims_raw = payload.get("claims", [])
+    claims, soft = _normalize_claims(claims_raw)
+    errors.extend(soft)
+
+    # Core sets
+    P, S, I, E, H, C, O, V, A = set(), set(), set(), set(), set(), set(), set(), set(), set()
+
+    for c in claims:
+        p = c["predicate"]
+        a = c["args"]
+        if p == 'Phenomenon':
+            if len(a) != 1:
+                errors.append("Phenomenon expects 1 arg")
+            else:
+                P.add(a[0])
+        elif p == 'Substrate':
+            if len(a) != 1:
+                errors.append("Substrate expects 1 arg")
+            else:
+                S.add(a[0])
+        elif p in ('Inseparable', 'NotTwo'):
+            if len(a) != 2:
+                errors.append(f"{p} expects 2 args")
+            else:
+                I.add(tuple(a))
+        elif p == 'Essence':
+            if len(a) != 1:
+                errors.append("Essence expects 1 arg")
+            else:
+                E.add(a[0])
+        elif p == 'HasCoords':
+            if len(a) != 2:
+                errors.append("HasCoords expects 2 args (frame, x)")
+            else:
+                H.add(tuple(a))
+        elif p == 'CausallyPrecedes':
+            if len(a) != 2:
+                errors.append("CausallyPrecedes expects 2 args")
+            else:
+                C.add(tuple(a))
+        elif p == 'Owns':
+            if len(a) != 2:
+                errors.append("Owns expects 2 args (agent, p)")
+            else:
+                O.add(tuple(a))
+        elif p == 'ValidConv':
+            if len(a) != 1:
+                errors.append("ValidConv expects 1 arg (p)")
+            else:
+                V.add(a[0])
+        elif p == 'Applies':
+            if len(a) != 2:
+                errors.append("Applies expects 2 args")
+            else:
+                A.add(tuple(a))
+        elif p == 'ArisesFrom':
+            if len(a) != 2:
+                errors.append("ArisesFrom expects 2 args")
+        elif p == 'LT':
+            if len(a) != 2:
+                errors.append("LT expects 2 args: 'T(x)', 'T(y)'")
+        else:
+            errors.append(f"Unknown predicate {p}")
+
+    # Unique substrate
     for s in S:
-        if s != Ω: errors.append(f'Only Ω may be Substrate, found {s}')
+        if s != Ω:
+            errors.append(f"Only Ω may be Substrate, found {s}")
+
+    # Non-duality and emptiness
     for x in P:
-        if (x, Ω) not in I: errors.append(f'{x} must be Inseparable from Ω')
-        if x in E: errors.append(f'Phenomenon {x} cannot have Essence')
+        if (x, Ω) not in I:
+            errors.append(f"{x} must be Inseparable from Ω")
+        if x in E:
+            errors.append(f"Phenomenon {x} cannot have Essence")
+
+    # Causality scope
     for (x, y) in C:
         if x not in P or y not in P:
-            errors.append(f'CausallyPrecedes({x},{y}) only for Phenomena')
-    for (f, x) in H:
-        if x not in P: errors.append(f'HasCoords({f},{x}) only for Phenomenon')
-    for (a, p) in O:
-        if p not in P: errors.append(f'Owns({a},{p}) requires Phenomenon')
-        if p not in V: errors.append(f'Owns({a},{p}) requires ValidConv')
-        if (p, Ω) not in I: errors.append(f'Owns({a},{p}) implies Inseparable({p},Ω)')
-        if p in E: errors.append(f'Owns({a},{p}) cannot ascribe Essence')
-    for (c, x) in A:
-        if x not in P: errors.append(f'Applies({c},{x}) requires Phenomenon')
+            errors.append(f"CausallyPrecedes({x},{y}) only for Phenomena")
 
-    if not errors and not richness_check(claims):
+    # Coordinates only for phenomena
+    for (f, x) in H:
+        if x not in P:
+            errors.append(f"HasCoords({f},{x}) only for Phenomenon")
+
+    # Ownership conventional
+    for (a, p) in O:
+        if p not in P:
+            errors.append(f"Owns({a},{p}) requires Phenomenon")
+        if p not in V:
+            errors.append(f"Owns({a},{p}) requires ValidConv")
+        if (p, Ω) not in I:
+            errors.append(f"Owns({a},{p}) implies Inseparable({p},Ω)")
+        if p in E:
+            errors.append(f"Owns({a},{p}) cannot ascribe Essence")
+
+    # Applies requires Phenomenon
+    for (cname, x) in A:
+        if x not in P:
+            errors.append(f"Applies({cname},{x}) requires Phenomenon")
+
+    # Richness requirement
+    if not errors and not _richness_check(claims):
         errors.append("Too-trivial: include at least one informative relation "
                       "(Applies/Owns/HasCoords/CausallyPrecedes/ArisesFrom/LT).")
 
