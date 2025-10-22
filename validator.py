@@ -128,6 +128,13 @@ def validate(payload):
         if p in E: errors.append(f"Owns({a},{p}) cannot ascribe Essence")
     for (cname, x) in A:
         if x not in P: errors.append(f"Applies({cname},{x}) requires Phenomenon")
+        # Ensure all arguments of CausallyPrecedes are phenomena
+    for c in claims:
+        if c["predicate"] == "CausallyPrecedes":
+            for arg in c["args"]:
+                if not any(cc for cc in claims if cc["predicate"] == "Phenomenon" and arg in cc["args"]):
+                    claims.append({"predicate": "Phenomenon", "args": [arg]})
+
 
     if not errors and not _richness_check(claims):
         errors.append("Too-trivial: include at least one informative relation (Applies/Owns/HasCoords/CausallyPrecedes/ArisesFrom/LT).")
