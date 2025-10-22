@@ -35,20 +35,44 @@ def _normalize_claims(claims):
 
 
 def repair(payload):
+    """
+    Auto-complete safe claims before validation:
+    - Ensure Phenomenon(x) ⇒ Inseparable(x, Ω)
+    - Ensure Owns(a,p) ⇒ ValidConv(p)
+    - Ensure all arguments of CausallyPrecedes(x,y) are declared Phenomenon(...)
+    """
     import copy
     d = payload if isinstance(payload, dict) else {}
     d = copy.deepcopy(d)
+
     claims = d.get("claims", [])
     claims, _ = _normalize_claims(claims)
 
-    phenos = {c["args"][0] for c in claims if c["predicate"] == "Phenomenon" and len(c["args"]) >= 1}
-    inseps = {(c["args"][0], c["args"][1]) for c in claims if c["predicate"] in ("Inseparable", "NotTwo") and len(c["args"]) >= 2}
+    # 1) Ensure both sides of CausallyPrecedes are Phenomena
+    #    (do this first so downstream rules see them as P)
+    for c in list(claims):
+        if c["predicate"] == "CausallyPrecedes" and len(c["args"]) >= 2:
+            for arg in c["args"]:
+                if not any(cc for cc in claims
+                           if cc["predicate"] == "Phenomenon"
+                           and len(cc["args"]) == 1
+                           and cc["args"][0] == arg):
+                    claims.append({"predicate": "Phenomenon", "args": [arg]})
+
+    # 2) Inseparable(x, Ω) for every declared Phenomenon(x)
+    phenos = {c["args"][0] for c in claims
+              if c["predicate"] == "Phenomenon" and len(c["args"]) >= 1}
+    inseps = {(c["args"][0], c["args"][1]) for c in claims
+              if c["predicate"] in ("Inseparable", "NotTwo") and len(c["args"]) >= 2}
     for x in phenos:
         if (x, Ω) not in inseps:
             claims.append({"predicate": "Inseparable", "args": [x, "Ω"]})
 
-    owned = [(c["args"][0], c["args"][1]) for c in claims if c["predicate"] == "Owns" and len(c["args"]) >= 2]
-    valid = {c["args"][0] for c in claims if c["predicate"] == "ValidConv" and len(c["args"]) >= 1}
+    # 3) Owns(a,p) ⇒ ValidConv(p)
+    owned = [(c["args"][0], c["args"][1]) for c in claims
+             if c["predicate"] == "Owns" and len(c["args"]) >= 2]
+    valid = {c["args"][0] for c in claims
+             if c["predicate"] == "ValidConv" and len(c["args"]) >= 1}
     for (_, p) in owned:
         if p not in valid:
             claims.append({"predicate": "ValidConv", "args": [p]})
@@ -64,8 +88,12 @@ def _richness_check(claims):
 
 
 def validate(payload):
+    """
+    Read-only validation. Do NOT mutate claims here.
+    """
     import copy
     errors = []
+
     if not isinstance(payload, dict):
         return ["payload must be a JSON object"]
 
@@ -112,30 +140,38 @@ def validate(payload):
         else:
             errors.append(f"Unknown predicate {p}")
 
+    # Unique substrate
     for s in S:
         if s != Ω: errors.append(f"Only Ω may be Substrate, found {s}")
+
+    # Non-duality & emptiness
     for x in P:
         if (x, Ω) not in I: errors.append(f"{x} must be Inseparable from Ω")
         if x in E: errors.append(f"Phenomenon {x} cannot have Essence")
+
+    # Causality only for phenomena (P now computed on repaired claims)
     for (x, y) in C:
-        if x not in P or y not in P: errors.append(f"CausallyPrecedes({x},{y}) only for Phenomena")
+        if x not in P or y not in P:
+            errors.append(f"CausallyPrecedes({x},{y}) only for Phenomena")
+
+    # Coordinates only for phenomena
     for (f, x) in H:
-        if x not in P: errors.append(f"HasCoords({f},{x}) only for Phenomenon")
+        if x not in P:
+            errors.append(f"HasCoords({f},{x}) only for Phenomenon")
+
+    # Ownership conventional
     for (a, p) in O:
         if p not in P: errors.append(f"Owns({a},{p}) requires Phenomenon")
         if p not in V: errors.append(f"Owns({a},{p}) requires ValidConv")
         if (p, Ω) not in I: errors.append(f"Owns({a},{p}) implies Inseparable({p},Ω)")
         if p in E: errors.append(f"Owns({a},{p}) cannot ascribe Essence")
+
+    # Applies requires phenomenon
     for (cname, x) in A:
-        if x not in P: errors.append(f"Applies({cname},{x}) requires Phenomenon")
-        # Ensure all arguments of CausallyPrecedes are phenomena
-    for c in claims:
-        if c["predicate"] == "CausallyPrecedes":
-            for arg in c["args"]:
-                if not any(cc for cc in claims if cc["predicate"] == "Phenomenon" and arg in cc["args"]):
-                    claims.append({"predicate": "Phenomenon", "args": [arg]})
+        if x not in P:
+            errors.append(f"Applies({cname},{x}) requires Phenomenon")
 
-
+    # Non-triviality
     if not errors and not _richness_check(claims):
         errors.append("Too-trivial: include at least one informative relation (Applies/Owns/HasCoords/CausallyPrecedes/ArisesFrom/LT).")
 
