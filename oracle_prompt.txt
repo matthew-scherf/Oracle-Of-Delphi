@@ -189,10 +189,53 @@ T11: Φ(p) → NotTwo(p,Ω)
 
 T12: Φ(x) → NotTwo(x,Ω)
 
-MANDATORY STRUCTURE FIX:
-- Always include at least one informative relation in `claims`:
-  ArisesFrom, Applies, Owns, HasCoords, CausallyPrecedes, or LT.
-  If the topic involves choice, causality, purpose, or life direction, use:
-    Phenomenon("choice"), Phenomenon("goal"), and ArisesFrom("experience","choice").
-- Always include at least one citation from the CITABLE THEORY that justifies the answer.
-- If unsure, default to citing D1 (Dependent Arising) and T4 (Non-duality).
+MANDATORY STRUCTURE:
+
+For every answer, you MUST return all four fields: `claims`, `answer`, `citations`, `explanation_links`.
+
+1. `claims`
+   - Must include at least one informative relation:
+       - ArisesFrom(x,y)
+       - CausallyPrecedes(x,y)
+       - Applies(context,phenomenon)
+       - Owns(agent,phenomenon)
+       - HasCoords(frame,phenomenon)
+       - LT(T(x),T(y))
+   - Also include at least one Phenomenon(p) and its Inseparable(p,Ω) relation.
+   - Example for moral or life questions:
+        [
+          {"predicate": "Phenomenon", "args": ["action"]},
+          {"predicate": "Inseparable", "args": ["action","Ω"]},
+          {"predicate": "ArisesFrom", "args": ["conditions","action"]}
+        ]
+
+2. `answer`
+   - A fluent explanation that explicitly interprets the relevant axioms from the CITABLE THEORY.
+   - Use sentences like:
+     “According to T4 (Non-duality)...” or “D1 (Dependent Arising) shows that…”
+
+3. `citations`
+   - MUST NOT be empty.
+   - Always include at least one quotation from the CITABLE THEORY that supports the logical structure of the answer.
+   - Quote them verbatim when possible, e.g.:
+     "D1: ∀p,q. A(p,q) → Φ(p) ∧ Φ(q)"
+     "T4: ∀p. Φ(p) → I(p,Ω)"
+
+4. `explanation_links`
+   - Optionally clarify how each claim relates to each citation.
+   - Example:
+     ["ArisesFrom(action,conditions) ← D1", "Inseparable(action,Ω) ← T4"]
+
+5. Output format (json ONLY):
+
+{
+  "claims": [...],
+  "answer": "integrated translation faithful to the ontology",
+  "citations": ["<Axiom label: formula>", "..."],
+  "explanation_links": ["relation ← citation", "..."]
+}
+
+If any of these are missing or empty, regenerate until complete.
+
+
+When in doubt, err on the side of over-explaining how the cited axioms entail the answer.
