@@ -13,17 +13,25 @@ MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o")
 with open("oracle_prompt.txt","r",encoding="utf-8") as f:
     ORACLE_PROMPT = f.read()
 
-def call_model(q):
-    if not client:
-        raise RuntimeError("Missing OpenAI API key.")
+def call_model(q: str):
+    # Extra system nudge so JSON mode passes API validation
+    JSON_ONLY_NUDGE = (
+        "Return json only. Output a single JSON object with the required keys; "
+        "do not include markdown fences or any extra commentary."
+    )
+
     r = client.chat.completions.create(
         model=MODEL_NAME,
         temperature=0,
-        response_format={"type":"json_object"},
-        messages=[{"role":"system","content":ORACLE_PROMPT},
-                  {"role":"user","content":q}]
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": ORACLE_PROMPT},
+            {"role": "system", "content": JSON_ONLY_NUDGE},  # ensures 'json' appears in messages
+            {"role": "user", "content": q}
+        ]
     )
     return json.loads(r.choices[0].message.content)
+
 
 from validator import validate, repair
 
