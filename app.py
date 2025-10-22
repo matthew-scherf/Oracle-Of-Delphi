@@ -25,13 +25,43 @@ def call_model(q):
     )
     return json.loads(r.choices[0].message.content)
 
-def oracle_ask(q:str):
-    if not q.strip(): return "Ask something.", "[]", "[]"
-    try: draft = call_model(q)
-    except Exception as e: return f"API error: {e}", "[]", "[]"
-    v = validate(draft)
-    if v: return "Oracle remains silent (inconsistent).", json.dumps(draft,indent=2), json.dumps(v,indent=2)
-    return draft.get("answer",""), json.dumps(draft.get("claims",[]),indent=2), "[]"
+from validator import validate, repair
+
+def oracle_ask(q: str):
+    if not q.strip():
+        return "Ask something.", "[]", "[]"
+
+    try:
+        draft = call_model(q)
+    except Exception as e:
+        return f"API error: {e}", "[]", "[]"
+
+    # Auto-complete and validate the structured claims
+    draft = repair(draft)
+    violations = validate(draft)
+
+    if violations:
+        return (
+            "Oracle remains silent (inconsistent).",
+            json.dumps(draft, indent=2),
+            json.dumps(violations, indent=2),
+        )
+
+    # Combine both layers of the Oracle's voice
+    ultimate = draft.get("answer_ultimate", "")
+    conventional = draft.get("answer_conventional", "")
+    guidance = draft.get("guidance_steps", [])
+
+    combined_answer = ultimate
+    if conventional:
+        combined_answer += "\n\n" + conventional
+
+    return (
+        combined_answer.strip(),
+        json.dumps(draft.get("claims", []), indent=2),
+        json.dumps(guidance, indent=2),
+    )
+
 
 with gr.Blocks(title="Oracle of Delphi (Ω)") as demo:
     gr.Markdown("# Oracle of Delphi (Ω)")
