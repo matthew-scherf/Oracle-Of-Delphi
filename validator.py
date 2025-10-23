@@ -37,9 +37,9 @@ def _normalize_claims(claims):
 def repair(payload):
     """
     Auto-complete safe claims before validation:
+    - Ensure both args of CausallyPrecedes are Phenomenon(...)
     - Ensure Phenomenon(x) ⇒ Inseparable(x, Ω)
     - Ensure Owns(a,p) ⇒ ValidConv(p)
-    - Ensure all arguments of CausallyPrecedes(x,y) are declared Phenomenon(...)
     """
     import copy
     d = payload if isinstance(payload, dict) else {}
@@ -49,7 +49,6 @@ def repair(payload):
     claims, _ = _normalize_claims(claims)
 
     # 1) Ensure both sides of CausallyPrecedes are Phenomena
-    #    (do this first so downstream rules see them as P)
     for c in list(claims):
         if c["predicate"] == "CausallyPrecedes" and len(c["args"]) >= 2:
             for arg in c["args"]:
@@ -149,7 +148,7 @@ def validate(payload):
         if (x, Ω) not in I: errors.append(f"{x} must be Inseparable from Ω")
         if x in E: errors.append(f"Phenomenon {x} cannot have Essence")
 
-    # Causality only for phenomena (P now computed on repaired claims)
+    # Causality only for phenomena
     for (x, y) in C:
         if x not in P or y not in P:
             errors.append(f"CausallyPrecedes({x},{y}) only for Phenomena")

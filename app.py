@@ -1,6 +1,5 @@
 import os, json, gradio as gr
 from validator import validate, repair
-from theory_map import SYMBOLIC_LOGIC_MD
 
 def get_client():
     try:
@@ -18,16 +17,22 @@ def get_client():
 MODEL_NAME = os.environ.get("MODEL_NAME","gpt-4o-mini")
 
 with open("oracle_prompt.txt","r",encoding="utf-8") as f:
-    ORACLE_PROMPT = f.read()
+    BASE_PROMPT = f.read()
+
+from theory_map import BUNDLED_THEORY
+THEORY_TEXT = BUNDLED_THEORY
+
+def make_prompt():
+    return BASE_PROMPT.replace("{{CITABLE_THEORY}}", THEORY_TEXT)
 
 def call_model(q: str, extra_system: str | None = None):
     client = get_client()
     JSON_ONLY_NUDGE = (
         "Return json only. Output a single JSON object with the required keys; "
-        "do not include markdown fences or any extra commentary."
+        "do not include markdown fences or any extra commentary. The word 'json' appears here."
     )
     messages = [
-        {"role": "system", "content": ORACLE_PROMPT},
+        {"role": "system", "content": make_prompt()},
         {"role": "system", "content": JSON_ONLY_NUDGE},
         {"role": "system", "content": "When you cite, quote verbatim from the CITABLE THEORY if possible."}
     ]
@@ -43,51 +48,70 @@ def call_model(q: str, extra_system: str | None = None):
     )
     return json.loads(resp.choices[0].message.content)
 
-def oracle_ask(q: str):
+def oracle_ask(q: str, time_hint: bool):
     if not q.strip():
         return "Ask something.", "[]", "[]", "[]"
+    extra = None
+    if time_hint or any(w in q.lower() for w in ["time","spacetime"]):
+        extra = ("Include Phenomenon('space'), Phenomenon('time'), Inseparable('space','Ω'), "
+                 "Inseparable('time','Ω'), and CausallyPrecedes('space','time'). Cite ST1 (Spatial Priority)." )
     try:
-        draft = call_model(q)
+        draft = call_model(q, extra_system=extra)
     except Exception as e:
         return f"API error: {e}", "[]", "[]", "[]"
 
     draft = repair(draft)
-
     if not draft.get("claims"):
-        draft = call_model(q, extra_system="Add at least one informative relation and cite relevant axioms (e.g., D1, T4). Return json only.")
+        try:
+            draft = call_model(q, extra_system=(extra or "") + " Add at least one informative relation and cite relevant axioms.")
+        except Exception as e:
+            return f"API error (retry): {e}", "[]", "[]", "[]"
+        draft = repair(draft)
 
     violations = validate(draft)
-
     if violations:
-        hint = (
-            "Revise to satisfy all constraints. Include at least ONE informative relation in `claims` "
-            "(Applies/Owns/HasCoords/CausallyPrecedes/ArisesFrom/LT). Add citations referencing the theory."
-        )
         try:
-            draft = call_model(q, extra_system="Violations: " + "; ".join(violations) + " | " + hint)
+            draft = call_model(q, extra_system="Violations: " + "; ".join(violations) + " | Revise to satisfy all constraints.")
         except Exception as e:
             return f"API error (revise): {e}", "[]", "[]", "[]"
-
         draft = repair(draft)
         violations = validate(draft)
 
     if violations:
-        return "Oracle remains silent (inconsistent).", json.dumps(draft, indent=2), json.dumps(violations, indent=2), "[]"
+        return "Oracle remains silent (inconsistent).", json.dumps(draft, indent=2, ensure_ascii=False), json.dumps(violations, indent=2, ensure_ascii=False), "[]"
 
-    answer = draft.get("answer","").strip()
-    claims = json.dumps(draft.get("claims",[]), indent=2)
-    citations = json.dumps(draft.get("citations", []), indent=2, ensure_ascii=False)
+    answer = (draft.get("answer","") or "").strip()
+    claims = json.dumps(draft.get("claims",[]), indent=2, ensure_ascii=False)
+    citations = json.dumps(draft.get("citations",[]), indent=2, ensure_ascii=False)
     return answer, claims, "[]", citations
 
-with gr.Blocks(title="Oracle of Delphi (Ω) — Cited") as demo:
-    gr.Markdown("# Oracle of Delphi (Ω) — Cited Reasoning")
-    q = gr.Textbox(label="Your question", lines=2)
-    b = gr.Button("Ask")
-    a = gr.Textbox(label="Answer", lines=6)
+def load_theory(file_obj):
+    global THEORY_TEXT
+    try:
+        THEORY_TEXT = file_obj.decode("utf-8")
+        return "Loaded new theory.", THEORY_TEXT[:1200] + ("..." if len(THEORY_TEXT)>1200 else "")
+    except Exception as e:
+        return f"Failed to load: {e}", ""
+
+with gr.Blocks(title="Oracle of Delphi (Ω) — Theory of Everything Edition") as demo:
+    gr.Markdown("# Oracle of Delphi (Ω) — Theory of Everything\nUpload or edit your theory; the Oracle will cite it and reason within it.")
+    with gr.Row():
+        q = gr.Textbox(label="Your question", lines=2)
+        time_hint = gr.Checkbox(label="Emphasize Spatial Priority (ST1) for this question", value=False)
+    ask = gr.Button("Ask")
+    a = gr.Textbox(label="Answer", lines=8)
     c = gr.Code(label="Claims (JSON)")
     v = gr.Code(label="Violations")
     z = gr.Code(label="Citations (Axioms/Theorems)")
-    b.click(oracle_ask, inputs=[q], outputs=[a,c,v,z])
+
+    ask.click(oracle_ask, inputs=[q, time_hint], outputs=[a,c,v,z])
+
+    with gr.Accordion("Theory Loader", open=False):
+        up = gr.File(label="Upload .thy / .md (text)", file_types=[".thy",".md",".txt"])
+        load_btn = gr.Button("Load as active theory")
+        status = gr.Textbox(label="Load status")
+        preview = gr.Code(label="Active theory preview (head)")
+        load_btn.click(load_theory, inputs=[up], outputs=[status, preview])
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT","7860")))
