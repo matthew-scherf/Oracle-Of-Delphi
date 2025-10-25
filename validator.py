@@ -1,44 +1,5 @@
 # validator.py — ND-aware structured-claims normalizer + validator
 # Extends the phenomenology schema with Nondual Core constraints (ND1–ND7).
-#
-# New predicates supported (optional in claims):
-#   - TimeOrder(i,phi1,phi2)        ~ encodes t i phi1 < t i phi2  (ND5 trigger)
-#   - ComplexityOrder(phi1,phi2)     ~ encodes c phi1 ≤ c phi2      (ND5 consequence)
-#   - Physical(i,phi)                ~ ND6 antecedent
-#   - Stationary(i,phi)              ~ ND6 consequent
-#   - PiEq(phi,i)                    ~ phi = pi omega0 i            (ND1 witness form)
-#   - PiDistinct(i1,i2)              ~ pi omega0 i1 ≠ pi omega0 i2  (ND7 antecedent)
-#   - DifferenceInIndexing(i1,i2)    ~ ND7 consequent
-#   - HasIntrinsicProperty(x,p)      ~ must NOT hold for x=Ω per ND3
-#   - Valid(x)                       ~ optional book-keeping (ND4 ties Valid to g>0; we only police consistency)
-#
-# Baseline predicates (unchanged):
-#   Phenomenon, Substrate, Inseparable, NotTwo, Essence, HasCoords,
-#   CausallyPrecedes, ArisesFrom, Owns, ValidConv, Applies, Nonneg, LT
-#
-# Core invariants kept:
-#   - Exactly one Substrate (Ω)
-#   - Phenomenon(x) ⇒ Inseparable(x, Ω) and ¬Essence(x)
-#   - CausallyPrecedes/HasCoords over phenomena only
-#   - Owns is conventional (requires ValidConv(x) and Inseparable(x,Ω), forbids Essence)
-#
-# ND-specific static checks:
-#   ND3: Forbid HasIntrinsicProperty(Ω, p) for any p.
-#   ND5: TimeOrder(i,φ1,φ2) ⇒ require ComplexityOrder(φ1,φ2).
-#   ND6: Physical(i,φ) ⇒ require Stationary(i,φ).
-#   ND7: PiDistinct(i1,i2) ⇒ require DifferenceInIndexing(i1,i2).
-#
-# Citation enforcement (soft but explicit):
-#   - If any ND5 relation is used, require a citation containing "ND5".
-#   - If ND6 relation is used, require "ND6".
-#   - If ND7 relation is used, require "ND7".
-#   - If HasIntrinsicProperty is asserted about Ω (which is illegal), raise hard error (ND3).
-#
-# Auto-repair:
-#   - Map Substrate("omega0") → Substrate("Ω")
-#   - If any claim references "omega0", alias to "Ω"
-#   - For new relations, auto-infer Phenomenon() for any φ arguments and add Inseparable(φ,Ω).
-#   - CausallyPrecedes(x,y): auto-add Phenomenon(x,y) if missing (as before).
 
 Ω = 'Ω'
 
@@ -88,7 +49,8 @@ def repair(payload):
 
     # Auto-infer phenomena for various relations (and then inseparability)
     def add_pheno(x):
-        if not any(cc for cc in claims if cc["predicate"] == "Phenomenon" and len(cc["args"]) == 1 and cc["args"][0] == x):
+        if not any(cc for cc in claims
+                   if cc["predicate"] == "Phenomenon" and len(cc["args"]) == 1 and cc["args"][0] == x):
             claims.append({"predicate": "Phenomenon", "args": [x]})
 
     ND_rels = {
@@ -135,7 +97,10 @@ def repair(payload):
 def _richness_check(claims):
     informative = [
         c for c in claims
-        if c["predicate"] in ("CausallyPrecedes", "HasCoords", "Applies", "Owns", "ArisesFrom", "LT", "TimeOrder", "ComplexityOrder")
+        if c["predicate"] in (
+            "CausallyPrecedes", "HasCoords", "Applies", "Owns",
+            "ArisesFrom", "LT", "TimeOrder", "ComplexityOrder"
+        )
     ]
     return len(informative) >= 1
 
@@ -326,24 +291,24 @@ def validate(payload):
         if p0 in E:
             errors.append(f"Owns({a0},{p0}) cannot ascribe Essence")
 
-    # ND5 enforcement: TimeOrder(i,φ1,φ2) ⇒ ComplexityOrder(φ1,φ2)
+    # ND5: TimeOrder ⇒ ComplexityOrder
     for (_, p1, p2) in time_orders:
         if (p1, p2) not in complexity_orders:
             errors.append(f"ND5: TimeOrder({p1},{p2}) requires ComplexityOrder({p1},{p2})")
 
-    # ND6 enforcement: Physical(i,φ) ⇒ Stationary(i,φ)
+    # ND6: Physical ⇒ Stationary
     for pair in physicals:
         if pair not in stationarys:
             i, ph = pair
             errors.append(f"ND6: Physical({i},{ph}) requires Stationary({i},{ph})")
 
-    # ND7 enforcement: PiDistinct(i1,i2) ⇒ DifferenceInIndexing(i1,i2)
+    # ND7: PiDistinct ⇒ DifferenceInIndexing
     for pair in pidistincts:
         if pair not in differences:
             i1, i2 = pair
             errors.append(f"ND7: PiDistinct({i1},{i2}) requires DifferenceInIndexing({i1},{i2})")
 
-    # Soft citation checks (only warn if missing NDx)
+    # Soft citation checks
     if used_ND5 and ("ND5" not in citations_text):
         errors.append("CITATION: Using ND5 relations requires a citation mentioning 'ND5'.")
     if used_ND6 and ("ND6" not in citations_text):
