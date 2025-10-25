@@ -56,13 +56,11 @@ Then open `http://localhost:7860` in your browser.
 
 ## Citation
 
-> Scherf, M. (2025). *The Unique Ontic Substrate: A Machine-Verified Non-Dual Theory of Everything.*
-> Isabelle/HOL formalization. [https://github.com/matthew-scherf/Only-One](https://github.com/matthew-scherf/Only-One)
+> Scherf, M. (2025). *The Unique Ontic Substrate: A Machine-Verified Non-Dual Theory*
+ 
 
 ---
-
-Would you like me to extend this README with a short **"For researchers"** section explaining how to add new `.thy` theories and have them recognized by the Oracle automatically (for academic collaborators)?
-
+ 
 # Sample Questions for the Oracle of Delphi (Ω)
 
 Each question is interpreted within the Theory of Everything corpus (Scherf, 2025).  
