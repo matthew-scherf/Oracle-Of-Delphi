@@ -1,17 +1,5 @@
----
-title: Oracle
-emoji: 📚
-colorFrom: gray
-colorTo: red
-sdk: gradio
-sdk_version: 5.49.1
-app_file: app.py
-pinned: false
-license: mit
-short_description: The Oracle Of Nonduality
----
 
-# Oracle of Delphi (Ω) — Theory of Everything Edition
+# Ω 
 
 **Live demo:** [Hugging Face Space → okwhynotwtf/oracle](https://huggingface.co/spaces/okwhynotwtf/oracle)
 
