@@ -1,5 +1,5 @@
 import os, json, gradio as gr
-from validator import validate, repair
+from nd_validator import validate, repair
 from theory_map import BUNDLED_THEORY
 
 def get_client():
